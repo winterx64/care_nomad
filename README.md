@@ -1,31 +1,35 @@
 # CARE – Nomad Local Development Setup
 
-This document explains how to run the **CARE backend API** locally using **HashiCorp Nomad (dev mode)** with **Docker Compose** for infrastructure services.
+This document explains how to run the **CARE backend API** locally using **HashiCorp Nomad (dev mode)** with **Docker containers managed by Nomad**.
 
-This setup mirrors a real production-style workflow while keeping local development simple and reproducible.
+This setup mirrors **production-style orchestration** while remaining **fully local, reproducible, and CI-friendly**.
+
+---
 
 ## Architecture Overview
 
-| Component          | Tool           | Responsibility        |
-| ------------------ | -------------- | --------------------- |
-| API (Django)       | Nomad          | Application runtime   |
-| Database           | Docker Compose | PostgreSQL            |
-| Cache              | Docker Compose | Redis                 |
-| Object Storage     | Docker Compose | MinIO                 |
-| Build              | Docker         | Image build           |
-| DX / Orchestration | Makefile       | One-command workflows |
+| Component     | Tool            | Responsibility         |
+| ------------- | --------------- | ---------------------- |
+| API (Django)  | Nomad           | Application runtime    |
+| Database      | Nomad           | PostgreSQL container   |
+| Cache         | Nomad           | Redis container        |
+| Build         | Docker          | Image build & runtime  |
+| Orchestration | Nomad           | Scheduling & lifecycle |
+| DX            | Makefile + Bash | One-command workflows  |
 
-**Important principle**
+**Core principle**
 
-> Docker Compose runs *infra only*.
-> Nomad runs the *application only*.
+> Nomad orchestrates **everything**.
+> Docker Compose is **not used** in this workflow.
+
+---
 
 ## Prerequisites
 
-Make sure the following are installed:
+Ensure the following are installed:
 
-* [Docker (with Compose v2)](https://docs.docker.com/engine/install/)
-* [Nomad](https://developer.hashicorp.com/nomad/install)
+* Docker (Desktop or Engine)
+* Nomad
 * Make
 
 Verify:
@@ -36,198 +40,208 @@ nomad version
 make --version
 ```
 
-## Local Development (Docker Compose – full stack)
+---
 
-This is the **default dev mode** used by most contributors.
+## Local Development (Nomad – full stack)
 
-```bash
-make up
-```
+This is the **primary development mode**.
 
-This starts:
+All services are managed by Nomad:
 
 * PostgreSQL
 * Redis
-* MinIO
-* Django backend
-* Celery worker
+* Django API
 
-Access:
-
-* API → [http://localhost:9000](http://localhost:9000)
-* MinIO → [http://localhost:9001](http://localhost:9001)
-
-Stop everything:
+### One-command startup
 
 ```bash
-make down
-```
-
-## Nomad-based Development (API via Nomad)
-
-This mode runs:
-
-* **Database + Redis** → Docker Compose
-* **Django API** → Nomad
-
-This simulates production orchestration locally.
-
-### One-command Nomad deployment
-
-```bash
-make nomad-deploy
+make nomad-up
 ```
 
 What this does:
 
 1. Starts Nomad in dev mode (if not already running)
-2. Builds `care-backend:nomad` Docker image
-3. Starts PostgreSQL & Redis via Docker Compose
-4. Waits for infra readiness
-5. Deploys the API using `care-api.nomad`
+2. Deploys PostgreSQL via `postgres.nomad`
+3. Deploys Redis via `redis.nomad`
+4. Deploys Django API via `care-backend.nomad`
 
-### Check status
+---
 
-```bash
-make nomad-status
+## Accessing the API
+
+The API is exposed on:
+
+```
+http://127.0.0.1:9000
 ```
 
-### View logs
+If you see an HTTPS redirect, ensure:
 
-```bash
-make nomad-logs
+* Django is running with **development settings**
+* You are not using cached browser redirects
+
+---
+
+## Django Settings (Important)
+
+When running under Nomad **locally**, the API uses:
+
+```txt
+DJANGO_SETTINGS_MODULE=config.settings.development
 ```
 
-### Stop Nomad + cleanup
+**Why?**
+
+* Production settings **force HTTPS by design**
+* Nomad dev has **no TLS termination**
+* Development settings correctly allow HTTP
+
+> Production settings are reserved for real deployments behind a reverse proxy.
+
+---
+
+## Nomad Job Specs
+
+Located in:
+
+```
+nomad/
+├── care-backend.nomad
+├── postgres.nomad
+└── redis.nomad
+```
+
+### care-backend.nomad (API)
+
+Key points:
+
+* Runs Gunicorn directly (PID 1)
+* Explicit port binding (`9000`)
+* Uses development Django settings
+* Connects to Postgres & Redis via localhost-mapped ports
+* No Consul dependency
+
+### Exposed port
+
+* API → `http://127.0.0.1:9000`
+
+---
+
+## Environment Variables (Nomad)
+
+### Django
+
+```txt
+DJANGO_SETTINGS_MODULE=config.settings.development
+DEBUG=false
+ALLOWED_HOSTS=*
+```
+
+### PostgreSQL
+
+```txt
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:<allocated-port>/care
+```
+
+### Redis
+
+```txt
+REDIS_URL=redis://127.0.0.1:<allocated-port>/0
+```
+
+(Ports are assigned by Nomad unless explicitly pinned.)
+
+---
+
+## Useful Commands
+
+### Check job status
 
 ```bash
-make nomad-stop
+make status
+```
+
+### View Nomad UI
+
+```
+http://127.0.0.1:4646
+```
+
+### Stop everything
+
+```bash
+make nomad-down
 ```
 
 This:
 
-* Stops the Nomad job
-* Stops the Nomad agent
-* Shuts down Docker Compose services
-* Cleans local artifacts
+* Stops all Nomad jobs
+* Stops the Nomad dev agent
+* Cleans up local artifacts
 
-## Nomad Job Spec (care-api.nomad)
-
-Key points:
-
-* Runs Django using `scripts/start-dev.sh`
-* Uses `host.docker.internal` to reach Docker Compose services
-* Avoids hardcoded bridge IPs
-* Uses explicit Postgres + Redis environment variables
-
-### Exposed port
-
-* API → `http://localhost:9000`
-
-## Environment Variables (Nomad)
-
-PostgreSQL:
-
-```txt
-POSTGRES_HOST=host.docker.internal
-POSTGRES_PORT=5433
-POSTGRES_DB=care
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-```
-
-Redis:
-
-```txt
-REDIS_HOST=host.docker.internal
-REDIS_PORT=6380
-REDIS_URL=redis://host.docker.internal:6380
-```
-
-Django:
-
-```txt
-DJANGO_SETTINGS_MODULE=config.settings.local
-DEBUG=true
-```
-
-## Why `host.docker.internal`?
-
-Nomad runs Docker containers **outside** the Docker Compose network.
-
-Using:
-
-```txt
-extra_hosts = ["host.docker.internal:host-gateway"]
-```
-
-allows Nomad containers to reliably reach:
-
-* PostgreSQL
-* Redis
-
-This works consistently across:
-
-* Linux
-* macOS
-* CI environments
+---
 
 ## Common Issues & Fixes
 
-### Port already allocated (9000)
+### API running but browser redirects to HTTPS
 
-Cause:
+**Cause**
 
-* Docker Compose backend already running
+* Django production settings
 
-Fix:
+**Fix**
 
-```bash
-make down
-```
+* Ensure `DJANGO_SETTINGS_MODULE=config.settings.development`
+* Clear browser cache or use curl
 
-or stop only backend/celery containers.
+---
 
-### PostgreSQL auth failure
+### Port 9000 already in use
 
-Cause:
+**Cause**
 
-* Wrong credentials
+* Another service bound to 9000
 
-Fix:
-Check:
+**Fix**
 
 ```bash
-docker inspect care-db-1 | grep POSTGRES_
+make nomad-down
 ```
 
-Update Nomad env vars accordingly.
+Or free the port manually.
 
-### Redis URL error
+---
 
-Cause:
+### No logs from API
 
-* Missing scheme (`redis://`)
+**Cause**
 
-Fix:
-Ensure:
+* No traffic yet
 
-```txt
-REDIS_URL=redis://host.docker.internal:6380
+**Fix**
+
+```bash
+curl http://127.0.0.1:9000
+nomad alloc logs <alloc-id>
 ```
+
+---
 
 ## Recommended Workflow
 
-* **Daily dev** → `make up`
-* **Nomad testing** → `make nomad-deploy`
-* **Debug orchestration** → Nomad UI (`http://localhost:4646`)
-* **Cleanup** → `make nomad-stop`
+* **Daily development** → `make nomad-up`
+* **Inspect orchestration** → Nomad UI
+* **Debug infra** → `nomad job status`
+* **Cleanup** → `make nomad-down`
+
+---
 
 ## Summary
 
 This setup provides:
 
-* Production-like orchestration
-* Fast local iteration
-* Clean separation of infra and app
+* Production-style orchestration with Nomad
+* Clean separation of concerns
+* Reproducible local + CI workflow
+* No Docker Compose coupling
 * One-command developer experience
