@@ -10,10 +10,4 @@ status:
 	@nomad job status
 
 nomad-down:
-	@echo "🛑 Stopping jobs..."
-	-@nomad job stop care-backend
-	-@nomad job stop care-redis
-	-@nomad job stop care-postgres
-	@if [ -f nomad.pid ]; then \
-		kill $$(cat nomad.pid) && rm nomad.pid; \
-	fi
+	@./scripts/nomad-down.sh
