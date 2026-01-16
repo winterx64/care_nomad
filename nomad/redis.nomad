@@ -7,7 +7,7 @@ job "care-redis" {
 
     network {
       port "redis" {
-        to = 6379
+        static = 6379
       }
     }
 
