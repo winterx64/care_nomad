@@ -17,7 +17,7 @@ job "care-backend" {
       driver = "docker"
 
       config {
-        image = "ghcr.io/ohcnetwork/care:latest-956"
+        image = "ghcr.io/ohcnetwork/care:latest"
         
         network_mode = "host"
         

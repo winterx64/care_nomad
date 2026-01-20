@@ -1,4 +1,4 @@
-.PHONY: nomad-up deploy status nomad-down
+.PHONY: nomad-up deploy status nomad-down load-fixtures
 
 nomad-up:
 	@./scripts/nomad-up.sh
@@ -11,3 +11,8 @@ status:
 
 nomad-down:
 	@./scripts/nomad-down.sh
+
+
+load-fixtures:
+	nomad job stop -purge care-load-fixtures || true
+	nomad run nomad/load-fixtures.nomad
