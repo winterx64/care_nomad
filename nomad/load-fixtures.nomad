@@ -17,32 +17,47 @@ job "care-load-fixtures" {
       config {
         image = "ghcr.io/ohcnetwork/care:latest"
 
-        command = "/app/.venv/bin/python"
+        entrypoint = ["/app/.venv/bin/python"]
         args = [
           "manage.py",
           "load_fixtures"
         ]
       }
-env {
-  # Keep production settings (image-compatible)
-  DJANGO_SETTINGS_MODULE = "config.settings.production"
+      env {
+        # Production Settings
+        DJANGO_SETTINGS_MODULE = "config.settings.production"
+        
+        # Static Files Fix
+        DJANGO_STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
+        WHITENOISE_USE_FINDERS     = "True"
 
-  # 🔑 THIS IS THE KEY FIX
-  ENVIRONMENT = "local"
+        # Security Overrides
+        ALLOWED_HOSTS = "*"
+        DEBUG         = "true"
+        SECRET_KEY    = "insecure-dev-key"
+        SECURE_SSL_REDIRECT          = "false"
+        DJANGO_SECURE_SSL_REDIRECT   = "false"
+        SESSION_COOKIE_SECURE        = "false"
+        CSRF_COOKIE_SECURE           = "false"
+        SECURE_HSTS_SECONDS          = "0"
+        ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http"
 
-  DEBUG = "true"
-  SECRET_KEY = "insecure-dev-key"
-  ALLOWED_HOSTS = "*"
+        # Storage
+        USE_S3      = "false"
+        STATIC_URL  = "/static/"
+        STATIC_ROOT = "/app/staticfiles"
+        MEDIA_URL   = "/media/"
+        MEDIA_ROOT  = "/app/media"
+        
+        # CORS
+        CORS_ALLOW_ALL_ORIGINS = "true"
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = "false"
+        SECURE_HSTS_PRELOAD = "false"
 
-  # Required backend contract
-  JWKS_BASE64 = "eyJrZXlzIjpbXX0="
 
-  DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/care"
-  REDIS_URL    = "redis://127.0.0.1:6379/0"
-
-  USE_S3 = "false"
-}
-
+        DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/care"
+        REDIS_URL    = "redis://127.0.0.1:6379/0"
+      }
 
       resources {
         cpu    = 500

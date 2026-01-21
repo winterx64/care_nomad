@@ -10,6 +10,7 @@ nomad job stop care-postgres || true
 if [ -f nomad.pid ]; then
   kill "$(cat nomad.pid)"
   rm nomad.pid
+  rm nomad.log
   echo "✓ Nomad agent stopped"
 else
   echo "No nomad.pid file found"
